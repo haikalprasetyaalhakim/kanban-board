@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 interface Card {
   id: string;
   title: string;
@@ -72,6 +74,13 @@ const columns: Column[] = [
 ];
 
 export default function KanbanBoard() {
+  useEffect(() => {
+    fetch("http://localhost:5000/api/health")
+      .then((res) => res.json())
+      .then((res) => console.log(res))
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 to-slate-100 p-8">
       <div className="max-w-7xl mx-auto">
