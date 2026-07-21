@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 interface Card {
   id: string;
@@ -74,19 +74,52 @@ const columns: Column[] = [
 ];
 
 export default function KanbanBoard() {
+  const [userEmail, setUserEmail] = useState("");
+
   useEffect(() => {
-    fetch("http://localhost:5000/api/health")
+    fetch("http://localhost:5000/api/me", {
+      credentials: "include",
+    })
       .then((res) => res.json())
-      .then((res) => console.log(res))
+      .then((res) => {
+        if (res.message.startsWith("Access denied")) {
+          window.location.href = "/login";
+          return;
+        }
+        alert("Logged in");
+        setUserEmail(res.user.email);
+      })
       .catch(() => {});
   }, []);
+
+  const handleLogout = () => {
+    fetch("http://localhost:5000/api/logout", {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((res) => res.json())
+      .then(() => (window.location.href = "/login"));
+  };
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 to-slate-100 p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-12">
-          <h1 className="text-4xl font-bold text-slate-900">My Kanban Board</h1>
-          <p className="text-slate-600 mt-2">Manage you tasks and workflow</p>
+        <div className="flex justify-between items-center mb-12">
+          <div>
+            <h1 className="text-4xl font-bold text-slate-900">
+              My Kanban Board
+            </h1>
+            <p className="text-slate-600 mt-2">
+              Logged in as:{" "}
+              <span className="font-semibold text-slate-800">{userEmail}</span>
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="bg-red-500 hover:bg-red-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors cursor-pointer"
+          >
+            Logout
+          </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
