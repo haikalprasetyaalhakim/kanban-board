@@ -1,80 +1,13 @@
-import { useEffect, useState } from "react";
-
-interface Card {
-  id: string;
-  title: string;
-  description: string;
-}
-
-interface Column {
-  id: string;
-  title: string;
-  cards: Card[];
-}
-
-const columns: Column[] = [
-  {
-    id: "todo",
-    title: "To Do",
-    cards: [
-      {
-        id: "1",
-        title: "Design homepage",
-        description: "Create wireframes and mockups for the landing page",
-      },
-      {
-        id: "2",
-        title: "Setup database",
-        description: "Configure PostgreSQL and create initial schema",
-      },
-      {
-        id: "3",
-        title: "Write API docs",
-        description: "Document all endpoints and authentication methods",
-      },
-    ],
-  },
-  {
-    id: "in-progress",
-    title: "In Progress",
-    cards: [
-      {
-        id: "4",
-        title: "Build login form",
-        description: "Implement authentication UI and validation",
-      },
-      {
-        id: "5",
-        title: "Setup CI/CD",
-        description: "Configure GitHub Actions for automated testing",
-      },
-    ],
-  },
-  {
-    id: "done",
-    title: "Done",
-    cards: [
-      {
-        id: "6",
-        title: "Initialize project",
-        description: "Create Next.js project and install dependencies",
-      },
-      {
-        id: "7",
-        title: "Setup Tailwind CSS",
-        description: "Configure Tailwind and create base styles",
-      },
-      {
-        id: "8",
-        title: "Create project repo",
-        description: "Initialize Git repository and push initial commit",
-      },
-    ],
-  },
-];
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 
 export default function KanbanBoard() {
   const [userEmail, setUserEmail] = useState("");
+  const [columns, setColumns] = useState<any[]>([]);
+  const [addingCardColumnId, setAddingCardColumnId] = useState<string | null>(
+    null,
+  );
+  const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setDescription] = useState("");
 
   useEffect(() => {
     fetch("http://localhost:5000/api/me", {
@@ -86,11 +19,14 @@ export default function KanbanBoard() {
           window.location.href = "/login";
           return;
         }
-        alert("Logged in");
         setUserEmail(res.user.email);
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (userEmail) fetchBoard();
+  }, [userEmail]);
 
   const handleLogout = () => {
     fetch("http://localhost:5000/api/logout", {
@@ -99,6 +35,49 @@ export default function KanbanBoard() {
     })
       .then((res) => res.json())
       .then(() => (window.location.href = "/login"));
+  };
+
+  const fetchBoard = () => {
+    fetch("http://localhost:5000/api/boards", { credentials: "include" })
+      .then((res) => res.json())
+      .then((res) => setColumns(res?.columns ?? []));
+  };
+
+  const handleCreateCard = (
+    e: ChangeEvent<HTMLFormElement>,
+    columnId: string,
+  ) => {
+    e.preventDefault();
+    if (!newTitle.trim()) return;
+
+    fetch("http://localhost:5000/api/cards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        columnId,
+        title: newTitle,
+        description: newDescription,
+      }),
+    })
+      .then((res) => res.json())
+      .then((newCard) => {
+        setNewTitle("");
+        setAddingCardColumnId(null);
+        setDescription("");
+        fetchBoard();
+      });
+  };
+
+  const handleDeleteCard = (cardId: string) => {
+    fetch(`http://localhost:5000/api/cards/${cardId}`, {
+      method: "DELETE",
+      credentials: "include",
+    })
+      .then((res) => res.json())
+      .then(() => {
+        fetchBoard();
+      });
   };
 
   return (
@@ -138,19 +117,82 @@ export default function KanbanBoard() {
               </div>
 
               <div className="flex-1 p-4 space-y-3 overflow-y-auto">
-                {column.cards.map((card) => (
+                {column.cards.map((card: any) => (
                   <div
                     key={card.id}
-                    className="bg-white p-4 rounded-md border border-slate-200 hover:shadow-md transition-shadow cursor-pointer"
+                    className="group relative bg-white p-4 rounded-md border border-slate-200 hover:shadow-md transition-shadow cursor-pointer"
                   >
-                    <h3 className="font-medium text-slate-900 text-sm mb-1">
-                      {card.title}
-                    </h3>
-                    <p className="text-xs text-slate-600 line-clamp-2">
-                      {card.description}
-                    </p>
+                    <div className="flex justify-between items-start">
+                      <h3 className="font-medium text-slate-900 text-sm mb-1 pr-4">
+                        {card.title}
+                      </h3>
+                      <button
+                        onClick={(e) => {
+                          handleDeleteCard(card.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-600 font-semibold text-xs p-1 rounded transition-opacity"
+                        title="Delete card"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {card.description && (
+                      <p className="text-xs text-slate-600 line-clamp-2">
+                        {card.description}
+                      </p>
+                    )}
                   </div>
                 ))}
+
+                {addingCardColumnId === column.id ? (
+                  <form
+                    onSubmit={(e) => handleCreateCard(e, column.id)}
+                    className="space-y-2 pt-2 bg-slate-50 p-2.5 rounded-md border border-slate-200 mt-2"
+                  >
+                    <input
+                      type="text"
+                      placeholder="Enter card title..."
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      autoFocus
+                      className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                    <textarea
+                      placeholder="Enter description (optional)"
+                      value={newDescription}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={2}
+                      className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="px-3 py-1 text-xs bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700"
+                      >
+                        Add Card
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddingCardColumnId(null);
+                          setNewTitle("");
+                          setDescription("");
+                        }}
+                        className="px-3 py-1 text-xs text-slate-600 hover:text-slate-900 font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <button
+                    className="w-full text-left text-sm text-slate-500 hover:text-slate-800 hover:bg-slate-50 py-2 px-3 rounded-md transition-colors flex items-center gap-1.5 font-medium border border-dashed border-slate-200 mt-2"
+                    onClick={() => setAddingCardColumnId(column.id)}
+                  >
+                    <span>+</span> Add a card
+                  </button>
+                )}
               </div>
             </div>
           ))}
