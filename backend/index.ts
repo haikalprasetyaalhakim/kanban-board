@@ -7,6 +7,7 @@ import cors from "cors";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
+import { prisma } from "./prisma/client";
 
 const app = express();
 const PORT = 5000;
@@ -44,31 +45,30 @@ const users: any[] = [];
 app.post("/api/register", async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
-  const existingUser = users.find((user) => user.email === email);
+  const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     return res.status(409).json({ message: "Email already registered" });
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  const newUser = {
-    id: Date.now().toString(),
-    email,
-    password: hashedPassword,
-  };
-
-  users.push(newUser);
+  const user = await prisma.user.create({
+    data: {
+      email,
+      password: hashedPassword,
+    },
+  });
 
   res.status(201).json({
     message: "Register successfully",
-    user: { id: newUser.id, email: newUser.email },
+    user,
   });
 });
 
 app.post("/api/login", async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
-  const user = users.find((user) => user.email === email);
+  const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     return res.status(400).json({ message: "Email or password are invalid" });
   }
@@ -97,6 +97,180 @@ app.post("/api/login", async (req: Request, res: Response) => {
 app.post("/api/logout", (req: Request, res: Response) => {
   res.clearCookie("token");
   res.json({ message: "Logout successfully" });
+});
+
+app.get("/api/boards", requireAuth, async (req: Request, res: Response) => {
+  const { userId } = (req as any).user;
+
+  let board = await prisma.board.findFirst({
+    where: { userId },
+    include: {
+      columns: {
+        orderBy: { position: "asc" },
+        include: {
+          cards: { orderBy: { position: "asc" } },
+        },
+      },
+    },
+  });
+
+  if (!board) {
+    board = await prisma.board.create({
+      data: {
+        userId,
+        title: "My Kanban Board",
+        columns: {
+          create: [
+            {
+              position: 0,
+              title: "To Do",
+            },
+            {
+              position: 1,
+              title: "In Progress",
+            },
+            {
+              position: 3,
+              title: "Done",
+            },
+          ],
+        },
+      },
+      include: {
+        columns: {
+          orderBy: { position: "asc" },
+          include: {
+            cards: { orderBy: { position: "asc" } },
+          },
+        },
+      },
+    });
+  }
+
+  res.json(board);
+});
+
+app.post("/api/cards", requireAuth, async (req: Request, res: Response) => {
+  const { userId } = (req as any).user;
+  const { columnId, title, description } = req.body;
+
+  if (!columnId || !title) {
+    return res.status(400).json({ message: "columnId and title required" });
+  }
+
+  const isMine = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      boards: {
+        some: {
+          columns: {
+            some: {
+              id: columnId,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!isMine) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const lastCard = await prisma.card.findFirst({
+    where: { columnId },
+    orderBy: { position: "desc" },
+  });
+
+  const position = lastCard ? lastCard.position + 1 : 0;
+
+  const card = await prisma.card.create({
+    data: {
+      columnId,
+      title,
+      description,
+      position,
+    },
+  });
+
+  res.status(201).json(card);
+});
+
+app.delete(
+  "/api/cards/:id",
+  requireAuth,
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { userId } = (req as any).user;
+
+    const isMine = await prisma.user.findFirst({
+      where: {
+        id: userId,
+        boards: {
+          some: {
+            columns: {
+              some: {
+                cards: {
+                  some: {
+                    id: id as string,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!isMine) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    await prisma.card.delete({
+      where: { id: id as string },
+    });
+
+    res.json({ message: "Card deleted successfully" });
+  },
+);
+
+app.put("/api/cards/:id", requireAuth, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { userId } = (req as any).user;
+  const { title, description, columnId, position } = req.body;
+
+  const isMine = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      boards: {
+        some: {
+          columns: {
+            some: {
+              cards: {
+                some: { id: id as string },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!isMine) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const updatedCard = await prisma.card.update({
+    where: { id: id as string },
+    data: {
+      ...(title !== undefined && { title }),
+      ...(description !== undefined && { description }),
+      ...(columnId !== undefined && { columnId }),
+      ...(position !== undefined && { position }),
+    },
+  });
+
+  res.json(updatedCard);
 });
 
 app.get("/api/health", (req: Request, res: Response) => {
