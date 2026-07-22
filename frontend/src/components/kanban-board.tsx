@@ -28,6 +28,26 @@ export default function KanbanBoard() {
     if (userEmail) fetchBoard();
   }, [userEmail]);
 
+  useEffect(() => {
+    const ws = new WebSocket("ws://localhost:5000");
+
+    ws.onopen = () => {
+      console.log("WebSocket Connected");
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === "CARD_UPDATED") {
+        console.log("Re fetching board...");
+        fetchBoard();
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, []);
+
   const handleLogout = () => {
     fetch("http://localhost:5000/api/logout", {
       method: "POST",

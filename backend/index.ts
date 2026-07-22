@@ -8,6 +8,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import { prisma } from "./prisma/client";
+import { WebSocketServer, WebSocket } from "ws";
 
 const app = express();
 const PORT = 5000;
@@ -193,6 +194,8 @@ app.post("/api/cards", requireAuth, async (req: Request, res: Response) => {
     },
   });
 
+  broadcast({ type: "CARD_UPDATED" });
+
   res.status(201).json(card);
 });
 
@@ -230,6 +233,7 @@ app.delete(
       where: { id: id as string },
     });
 
+    broadcast({ type: "CARD_UPDATED" });
     res.json({ message: "Card deleted successfully" });
   },
 );
@@ -270,6 +274,7 @@ app.put("/api/cards/:id", requireAuth, async (req: Request, res: Response) => {
     },
   });
 
+  broadcast({ type: "CARD_UPDATED" });
   res.json(updatedCard);
 });
 
@@ -277,6 +282,26 @@ app.get("/api/health", (req: Request, res: Response) => {
   res.json({ status: "OK", message: "Backend Express Typescript are ready!" });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
+});
+
+const wss = new WebSocketServer({ server });
+
+const broadcast = (data: any) => {
+  const message = JSON.stringify(data);
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+};
+
+wss.on("connection", (socket: WebSocket) => {
+  console.log("Client connected via Websocket");
+
+  socket.on("close", () => {
+    console.log("Client disconnected");
+  });
 });
