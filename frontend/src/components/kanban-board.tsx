@@ -29,7 +29,7 @@ export default function KanbanBoard() {
   }, [userEmail]);
 
   useEffect(() => {
-    const ws = new WebSocket("ws://localhost:5000");
+    const ws = new WebSocket("ws://localhost:5001");
 
     ws.onopen = () => {
       console.log("WebSocket Connected");
