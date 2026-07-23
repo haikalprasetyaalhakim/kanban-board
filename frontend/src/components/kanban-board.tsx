@@ -1,6 +1,9 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useParams } from "react-router";
 
 export default function KanbanBoard() {
+  const { boardId } = useParams<{ boardId: string }>();
+
   const [userEmail, setUserEmail] = useState("");
   const [columns, setColumns] = useState<any[]>([]);
   const [addingCardColumnId, setAddingCardColumnId] = useState<string | null>(
@@ -8,6 +11,7 @@ export default function KanbanBoard() {
   );
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setDescription] = useState("");
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("http://localhost:5000/api/me", {
@@ -29,7 +33,11 @@ export default function KanbanBoard() {
   }, [userEmail]);
 
   useEffect(() => {
-    const ws = new WebSocket("ws://localhost:5001");
+    if (!boardId || !userEmail) return;
+
+    const ws = new WebSocket(
+      `ws://localhost:5000?boardId=${boardId}&email=${encodeURIComponent(userEmail)}`,
+    );
 
     ws.onopen = () => {
       console.log("WebSocket Connected");
@@ -41,12 +49,16 @@ export default function KanbanBoard() {
         console.log("Re fetching board...");
         fetchBoard();
       }
+
+      if (data.type === "PRESENCE_UPDATE") {
+        setOnlineUsers(data.users);
+      }
     };
 
     return () => {
       ws.close();
     };
-  }, []);
+  }, [boardId, userEmail]);
 
   const handleLogout = () => {
     fetch("http://localhost:5000/api/logout", {
@@ -58,7 +70,10 @@ export default function KanbanBoard() {
   };
 
   const fetchBoard = () => {
-    fetch("http://localhost:5000/api/boards", { credentials: "include" })
+    if (!boardId) return;
+    fetch(`http://localhost:5000/api/boards/${boardId}`, {
+      credentials: "include",
+    })
       .then((res) => res.json())
       .then((res) => setColumns(res?.columns ?? []));
   };
@@ -108,9 +123,12 @@ export default function KanbanBoard() {
             <h1 className="text-4xl font-bold text-slate-900">
               My Kanban Board
             </h1>
-            <p className="text-slate-600 mt-2">
+            <p className="text-slate-600 mt-1">
               Logged in as:{" "}
               <span className="font-semibold text-slate-800">{userEmail}</span>
+            </p>
+            <p className="text-xs text-slate-400 mt-1 font-mono">
+              Board ID: {boardId}
             </p>
           </div>
           <button

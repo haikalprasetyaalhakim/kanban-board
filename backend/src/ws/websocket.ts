@@ -10,7 +10,10 @@ export const setupWebSocket = (
   const broadcast = (data: any) => {
     const message = JSON.stringify(data);
     wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
+      if (
+        client.readyState === WebSocket.OPEN &&
+        (client as any).boardId === data.boardId
+      ) {
         client.send(message);
       }
     });
@@ -24,11 +27,38 @@ export const setupWebSocket = (
     }
   });
 
-  wss.on("connection", (socket: WebSocket) => {
+  const broadcastPresence = (boardId: string) => {
+    const onlineUsers: string[] = [];
+
+    wss.clients.forEach((client) => {
+      if (
+        client.readyState === WebSocket.OPEN &&
+        (client as any).boardId === boardId &&
+        (client as any).userEmail
+      ) {
+        if (!onlineUsers.includes((client as any).userEmail)) {
+          onlineUsers.push((client as any).userEmail);
+        }
+      }
+    });
+
+    broadcast({ type: "PRESENCE_UPDATE", boardId, users: onlineUsers });
+  };
+
+  wss.on("connection", (socket: WebSocket, req: IncomingMessage) => {
     console.log("Client connected via WebSocket");
+
+    const url = new URL(req.url || "", `http://${req.headers.host}`);
+    const boardId = url.searchParams.get("boardId");
+    const email = url.searchParams.get("email");
+    (socket as any).boardId = boardId;
+    (socket as any).userEmail = email;
+
+    broadcastPresence(boardId!);
 
     socket.on("close", () => {
       console.log("Client disconnected");
+      broadcastPresence(boardId!);
     });
   });
 
