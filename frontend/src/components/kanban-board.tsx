@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useParams } from "react-router";
 
 export default function KanbanBoard() {
@@ -12,6 +12,10 @@ export default function KanbanBoard() {
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setDescription] = useState("");
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isReconnectingRef = useRef(false);
+  const reconnectTimerRef = useRef(null);
 
   useEffect(() => {
     fetch("http://localhost:5000/api/me", {
@@ -35,28 +39,47 @@ export default function KanbanBoard() {
   useEffect(() => {
     if (!boardId || !userEmail) return;
 
-    const ws = new WebSocket(
-      `ws://localhost:5000?boardId=${boardId}&email=${encodeURIComponent(userEmail)}`,
-    );
+    let ws: WebSocket | null = null;
 
-    ws.onopen = () => {
-      console.log("WebSocket Connected");
+    const connectWebSocket = () => {
+      ws = new WebSocket(
+        `ws://localhost:5000?boardId=${boardId}&email=${encodeURIComponent(userEmail)}`,
+      );
+
+      ws.onopen = () => {
+        console.log("WebSocket Connected");
+
+        if (isReconnectingRef.current) {
+          fetchBoard();
+          isReconnectingRef.current = false;
+        }
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "CARD_UPDATED") {
+          fetchBoard();
+        }
+        if (data.type === "PRESENCE_UPDATE") {
+          setOnlineUsers(data.users);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket Disconnected. Retrying in 2 seconds...");
+        isReconnectingRef.current = true;
+
+        reconnectTimerRef.current = setTimeout(() => {
+          connectWebSocket();
+        }, 2000);
+      };
     };
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "CARD_UPDATED") {
-        console.log("Re fetching board...");
-        fetchBoard();
-      }
-
-      if (data.type === "PRESENCE_UPDATE") {
-        setOnlineUsers(data.users);
-      }
-    };
+    connectWebSocket();
 
     return () => {
-      ws.close();
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (ws) ws.close();
     };
   }, [boardId, userEmail]);
 
@@ -83,7 +106,9 @@ export default function KanbanBoard() {
     columnId: string,
   ) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim() || isSubmitting) return;
+
+    setIsSubmitting(true);
 
     fetch("http://localhost:5000/api/cards", {
       method: "POST",
@@ -101,6 +126,9 @@ export default function KanbanBoard() {
         setAddingCardColumnId(null);
         setDescription("");
         fetchBoard();
+      })
+      .finally(() => {
+        setIsSubmitting(false);
       });
   };
 
@@ -206,9 +234,10 @@ export default function KanbanBoard() {
                     <div className="flex gap-2">
                       <button
                         type="submit"
-                        className="px-3 py-1 text-xs bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700"
+                        disabled={isSubmitting}
+                        className="px-3 py-1 text-xs bg-blue-600 disabled:bg-blue-300 text-white rounded-md"
                       >
-                        Add Card
+                        {isSubmitting ? "Adding..." : "Add Card"}
                       </button>
                       <button
                         type="button"
