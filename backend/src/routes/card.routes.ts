@@ -12,13 +12,19 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
   if (!columnId || !title)
     return res.status(400).json({ message: "columnId and title required" });
 
-  const isMine = await prisma.user.findFirst({
+  const column = await prisma.column.findFirst({
     where: {
-      id: userId,
-      boards: { some: { columns: { some: { id: columnId } } } },
+      id: columnId,
+      board: { userId },
     },
+    select: { boardId: true },
   });
-  if (!isMine) return res.status(401).json({ message: "Unauthorized" });
+
+  if (!column) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const boardId = column.boardId;
 
   const lastCard = await prisma.card.findFirst({
     where: { columnId },
@@ -30,7 +36,10 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     data: { columnId, title, description, position },
   });
 
-  pubClient.publish("kanban-events", JSON.stringify({ type: "CARD_UPDATED" }));
+  pubClient.publish(
+    "kanban-events",
+    JSON.stringify({ type: "CARD_UPDATED", boardId }),
+  );
   res.status(201).json(card);
 });
 
@@ -39,15 +48,22 @@ router.put("/:id", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).user;
   const { title, description, columnId, position } = req.body;
 
-  const isMine = await prisma.user.findFirst({
+  const existingCard = await prisma.card.findFirst({
     where: {
-      id: userId,
-      boards: {
-        some: { columns: { some: { cards: { some: { id: id as string } } } } },
-      },
+      id: id as string,
+      column: { board: { userId } },
+    },
+    select: {
+      id: true,
+      column: { select: { boardId: true } },
     },
   });
-  if (!isMine) return res.status(401).json({ message: "Unauthorized" });
+
+  if (!existingCard) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const boardId = existingCard.column.boardId;
 
   const updatedCard = await prisma.card.update({
     where: { id: id as string },
@@ -59,7 +75,10 @@ router.put("/:id", requireAuth, async (req: Request, res: Response) => {
     },
   });
 
-  pubClient.publish("kanban-events", JSON.stringify({ type: "CARD_UPDATED" }));
+  pubClient.publish(
+    "kanban-events",
+    JSON.stringify({ type: "CARD_UPDATED", boardId }),
+  );
   res.json(updatedCard);
 });
 
@@ -67,19 +86,29 @@ router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { userId } = (req as any).user;
 
-  const isMine = await prisma.user.findFirst({
+  const existingCard = await prisma.card.findFirst({
     where: {
-      id: userId,
-      boards: {
-        some: { columns: { some: { cards: { some: { id: id as string } } } } },
-      },
+      id: id as string,
+      column: { board: { userId } },
+    },
+    select: {
+      id: true,
+      column: { select: { boardId: true } },
     },
   });
-  if (!isMine) return res.status(401).json({ message: "Unauthorized" });
+
+  if (!existingCard) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const boardId = existingCard.column.boardId;
 
   await prisma.card.delete({ where: { id: id as string } });
 
-  pubClient.publish("kanban-events", JSON.stringify({ type: "CARD_UPDATED" }));
+  pubClient.publish(
+    "kanban-events",
+    JSON.stringify({ type: "CARD_UPDATED", boardId }),
+  );
   res.json({ message: "Card deleted successfully" });
 });
 
